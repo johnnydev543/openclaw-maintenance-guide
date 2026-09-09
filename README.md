@@ -1,34 +1,45 @@
-# OpenClaw NAS Maintenance Guide
+# OpenClaw NAS 維護指引
 
-This guide documents a security-focused OpenClaw deployment:
+[English version](README.en.md)
+
+本指引採用安全優先的架構：Gateway 原生執行於 NAS 的專用低權限使用者；所有 agent 的 shell 與工具命令，都在 rootless Docker sandbox 內執行。
 
 ```text
 Reverse proxy
-  -> host-native OpenClaw Gateway (dedicated non-root user)
-  -> rootless Docker sandbox containers
-  -> agent tools and shell commands
+  → host-native OpenClaw Gateway（專用非 root 使用者）
+  → rootless Docker sandbox
+  → agent 的工具與 shell 命令
 ```
 
-The Gateway runs natively on the host. All agent command execution stays in a sandbox image. Credentials remain in the Gateway's protected state and are not baked into images or mounted into sandboxes.
+Gateway 保有模型、LINE、GitHub OAuth 等憑證；它們不可寫入 image、workspace，也不可掛載到 sandbox。
 
-## Operating model
+## 基本原則
 
-- Run the Gateway as a dedicated `openclaw` user with no sudo access.
-- Run rootless Docker under that same user only for sandbox lifecycle management.
-- Keep agent sandboxes read-only, capability-dropped, and network-disabled unless a specific use case requires an exception.
-- Build a custom sandbox image for agent dependencies; do not install them at agent runtime.
-- Keep gateway secrets, OAuth credentials, the Docker socket, and private host folders out of sandbox mounts.
+- Gateway 使用專用 `openclaw` Linux 使用者執行，且不授予 sudo。
+- rootless Docker 只由 `openclaw` 用於 sandbox 生命週期管理。
+- sandbox 預設採用唯讀 root filesystem、`capDrop: ALL`、無網路。
+- agent 所需的系統套件預先放進自訂 sandbox image；不要在 agent 執行期間安裝。
+- 不要將 host Docker socket、私有 NAS 目錄或憑證掛入 sandbox。
 
-## Routine checks
+## 進入維護環境
 
-Run as the dedicated OpenClaw user:
+先登入 NAS，並切換至專用使用者：
 
 ```bash
+ssh nas
+sudo -iu openclaw
+
 export PATH="$HOME/.local/openclaw/bin:$HOME/.local/bin:$PATH"
 export OPENCLAW_CONFIG_PATH="$HOME/.openclaw/openclaw.json"
 export OPENCLAW_STATE_DIR="$HOME/.openclaw"
 export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
+```
 
+避免以 root 身份直接執行 OpenClaw。root 僅用於 NAS 層級維護或安裝系統更新。
+
+## 日常健康檢查
+
+```bash
 openclaw gateway status
 openclaw sandbox list
 openclaw models status --check
@@ -36,39 +47,71 @@ openclaw channels status --probe
 openclaw security audit --deep
 ```
 
-Restart the managed Gateway only when needed:
+Gateway 異常時：
 
 ```bash
 openclaw gateway restart
+openclaw gateway status
 ```
 
-Sandbox containers are managed by OpenClaw. Do not start them manually with Docker.
+sandbox container 由 OpenClaw 自動建立與管理；不要用 Docker 手動啟動它。
 
-## Updating OpenClaw
+查看 Gateway 最近日誌時，以 NAS 管理帳號執行：
 
-Preview first:
+```bash
+sudo -u openclaw \
+  XDG_RUNTIME_DIR=/run/user/1001 \
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus \
+  journalctl --user -u openclaw-gateway -n 100 --no-pager
+```
+
+## 更新 OpenClaw
+
+先預覽：
 
 ```bash
 openclaw update status
 openclaw update --dry-run
 ```
 
-Then update interactively so plugin capability changes can be reviewed:
+確認後以互動方式更新：
 
 ```bash
 openclaw update
+```
+
+更新後檢查：
+
+```bash
 openclaw doctor --lint
 openclaw security audit --deep
 openclaw gateway status
+openclaw channels status --probe
 ```
 
-Do not use automatic capability acceptance unless every requested permission expansion has been reviewed. Run `openclaw update cleanup` only after the updated installation has been stable long enough that rollback recovery files are no longer needed.
+如果更新要求 plugin capability 擴權，應先閱讀權限變化。不要為了省事使用自動接受擴權。待新版穩定一段時間後，才考慮執行：
 
-## Custom sandbox image
+```bash
+openclaw update cleanup
+```
 
-The default image is intentionally minimal. Create a versioned image whenever agents need additional operating-system tools.
+此動作會清理更新復原資料，降低回滾能力。
 
-Example `Dockerfile`:
+## 自訂 sandbox image
+
+預設 image 是刻意精簡的：
+
+```text
+openclaw-sandbox:bookworm-slim
+```
+
+若 agent 需要更多工具，建立帶日期或版本號的新 image，例如：
+
+```text
+openclaw-sandbox:tools-YYYY-MM-DD
+```
+
+範例 `Dockerfile`：
 
 ```dockerfile
 FROM openclaw-sandbox:bookworm-slim
@@ -84,13 +127,13 @@ RUN apt-get update \
 USER sandbox
 ```
 
-Build it as the dedicated OpenClaw user:
+以 `openclaw` 使用者建置：
 
 ```bash
 docker build -t openclaw-sandbox:tools-YYYY-MM-DD .
 ```
 
-Point `agents.defaults.sandbox.docker.image` to the new tag, then validate and recreate managed containers:
+接著把 `agents.defaults.sandbox.docker.image` 改成新 image，依序執行：
 
 ```bash
 openclaw config validate
@@ -99,41 +142,65 @@ openclaw sandbox recreate --all
 openclaw sandbox list
 ```
 
-Never overwrite a previous image tag. Retaining the last working tag makes rollback straightforward.
+新 container 會在下次 agent 執行時自動建立。
 
-Installing a command in the image does not grant it network access. For example, `curl`, `gh`, `git`, and `rclone` still cannot connect externally while the sandbox network remains disabled. Review and apply any network exception per agent; do not enable it globally by default.
+### 新增套件的固定流程
 
-`gh` inside the sandbox does not automatically receive OpenClaw's GitHub OAuth credentials. Do not copy OAuth tokens or other secrets into the image.
-
-## Configuration changes
-
-Use OpenClaw's config commands where practical:
-
-```bash
-openclaw config get agents.defaults.sandbox.docker.image
-openclaw config validate
+```text
+修改 Dockerfile
+→ 建置新 versioned image
+→ 變更 OpenClaw image 設定
+→ 驗證設定
+→ 重啟 Gateway
+→ 重建 sandbox
+→ 實測 agent
 ```
 
-After a configuration change, validate before restarting the Gateway. Treat changes to gateway authentication, trusted proxies, Control UI origins, channel credentials, provider credentials, and sandbox mounts as security-sensitive.
+不要覆蓋舊 image tag。保留上一個可用版本，才能快速回退。
 
-Never expose or commit secret files, Gateway tokens, OAuth records, session state, or `.env` files.
+## 網路與 GitHub 的注意事項
 
-## Backups
+即使 image 內已有 `curl`、`git`、`gh` 或 `rclone`，在 sandbox 網路仍是 `none` 時，它們仍無法連外。若特定 agent 確有需求，應逐一評估其網路例外，不要一口氣開放所有 agent。
 
-Protect and back up:
+sandbox 內的 `gh` 不會自動繼承 OpenClaw 的 GitHub OAuth。不要將 GitHub token、LINE token 或模型 API key 放入 Dockerfile、image、workspace 或 Git repository。
+
+## 設定、備份與 reverse proxy
+
+變更設定後，先驗證再重啟：
+
+```bash
+openclaw config validate
+openclaw gateway restart
+```
+
+尤其是以下設定，應視為安全敏感項目：Gateway auth、trusted proxies、Control UI origins、channel credentials、provider credentials，以及 sandbox mounts。
+
+應備份並保護：
 
 ```text
 ~/.openclaw/
 ~/.config/openclaw/gateway.env
-Sandbox Dockerfiles and image version records
+自訂 sandbox Dockerfile 與 image 版本紀錄
 ```
 
-Backups must be access-controlled or encrypted. If backing up SQLite state at the file level, capture the database together with its `-wal` and `-shm` files in one consistent filesystem snapshot.
+備份必須加密或限制存取。若以檔案方式備份 SQLite state，必須在一致性快照內連同 `.sqlite`、`-wal` 與 `-shm` 一併保存。
 
-## What not to do
+外部 HTTPS 通常由 reverse proxy 提供，並將流量轉送到 NAS Gateway 的 `18789` port。一般 OpenClaw 更新不需要變更 reverse proxy；外部連線異常時，依序確認 Gateway、LAN 上游連線、reverse proxy 與 DNS/NAT。
 
-- Do not grant the `openclaw` user sudo privileges.
-- Do not mount a host Docker socket into a sandbox.
-- Do not place tokens in Dockerfiles, images, workspaces, or repository files.
-- Do not run broad Docker cleanup commands against a shared system Docker daemon.
-- Do not delete OpenClaw state, workspaces, sessions, or recovery backups before confirming they are no longer needed.
+## 不應執行的操作
+
+- 不要讓 `openclaw` 使用者取得 sudo。
+- 不要將 host Docker socket 掛入 sandbox。
+- 不要把 token 或 secret 寫入 image、Dockerfile、workspace 或 repository。
+- 不要在共用的 system Docker daemon 上執行廣泛清理。
+- 不要在確認不再需要前刪除 state、sessions、workspace 或復原備份。
+
+## 每月例行項目
+
+```text
+1. 檢查更新並閱讀 release / capability 變化。
+2. 執行 doctor lint 與 security audit --deep。
+3. 測試 Gateway、channel 與模型連線。
+4. 確認備份可讀取且受保護。
+5. 檢視 image 與 plugin / skill 是否仍有必要。
+```
