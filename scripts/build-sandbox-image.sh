@@ -98,7 +98,7 @@ docker build \
   "$BUILD_DIR"
 
 echo "Applying image setting"
-openclaw config set "$IMAGE_CONFIG_PATH" "\"${IMAGE_TAG}\"" --strict-json
+openclaw config set "$IMAGE_CONFIG_PATH" "$IMAGE_TAG"
 
 echo "Validating configuration"
 openclaw config validate
