@@ -93,6 +93,16 @@ It builds a dated image tag, updates the sandbox image setting, validates the co
 
 The script refuses to overwrite an existing tag, preserving rollback images.
 
+### Playwright Chromium
+
+Do not run `playwright install-deps` or `playwright install chromium` inside a running sandbox: its root filesystem is read-only. Add `playwright` to the local `sandbox/pip-packages.txt`, then bake Chromium and its system dependencies into the image:
+
+```bash
+./scripts/build-sandbox-image.sh 2026-09-09-playwright --playwright-chromium
+```
+
+The image will become materially larger. Runtime agents should not need to install Playwright browsers afterwards.
+
 Legacy manual `Dockerfile` example:
 
 ```dockerfile

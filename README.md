@@ -160,6 +160,18 @@ touch sandbox/apt-packages.txt sandbox/pip-packages.txt
 
 不要覆蓋舊 image tag。保留上一個可用版本，才能快速回退。
 
+### Playwright Chromium
+
+不要在執行中的 sandbox 裡使用 `playwright install-deps` 或 `playwright install chromium`。sandbox 的 root filesystem 是唯讀；正確做法是在 image 建置時安裝。
+
+先在 NAS 本機的 `sandbox/pip-packages.txt` 加入 `playwright`，再執行：
+
+```bash
+./scripts/build-sandbox-image.sh 2026-09-09-playwright --playwright-chromium
+```
+
+這會在 image build 階段下載 Chromium、安裝它的 Debian 系統依賴，並在完成後套用新 image。image 會明顯變大，這是正常的；之後 agent 不必也不應在 runtime 再執行 Playwright 安裝。
+
 ## 網路與 GitHub 的注意事項
 
 即使 image 內已有 `curl`、`git`、`gh` 或 `rclone`，在 sandbox 網路仍是 `none` 時，它們仍無法連外。若特定 agent 確有需求，應逐一評估其網路例外，不要一口氣開放所有 agent。

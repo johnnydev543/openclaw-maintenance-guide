@@ -4,8 +4,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="${SCRIPT_DIR}/../sandbox"
-VERSION="${1:-$(date +%F)}"
-IMAGE_TAG="openclaw-sandbox:tools-${VERSION}"
+VERSION=""
+INSTALL_PLAYWRIGHT_CHROMIUM=0
 IMAGE_CONFIG_PATH="agents.defaults.sandbox.docker.image"
 BUILD_DIR=""
 BASE_APT_PACKAGES=(
@@ -19,6 +19,34 @@ cleanup() {
   [[ -z "$BUILD_DIR" ]] || rm -rf "$BUILD_DIR"
 }
 trap cleanup EXIT
+
+usage() {
+  cat <<'USAGE'
+Usage: build-sandbox-image.sh [version] [--playwright-chromium]
+
+Builds, activates, and recreates OpenClaw sandboxes.
+Use --playwright-chromium only when the local pip package list contains playwright.
+USAGE
+}
+
+for argument in "$@"; do
+  case "$argument" in
+    --playwright-chromium) INSTALL_PLAYWRIGHT_CHROMIUM=1 ;;
+    --help|-h) usage; exit 0 ;;
+    -*) echo "Unknown option: $argument" >&2; usage >&2; exit 2 ;;
+    *)
+      if [[ -n "$VERSION" ]]; then
+        echo "Only one image version may be supplied." >&2
+        usage >&2
+        exit 2
+      fi
+      VERSION="$argument"
+      ;;
+  esac
+done
+
+VERSION="${VERSION:-$(date +%F)}"
+IMAGE_TAG="openclaw-sandbox:tools-${VERSION}"
 
 if [[ ! "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
   echo "Version must contain only letters, digits, dots, underscores, or hyphens." >&2
@@ -65,6 +93,7 @@ fi
 echo "Building ${IMAGE_TAG}"
 docker build \
   --file "${BUILD_DIR}/Dockerfile" \
+  --build-arg "INSTALL_PLAYWRIGHT_CHROMIUM=${INSTALL_PLAYWRIGHT_CHROMIUM}" \
   --tag "$IMAGE_TAG" \
   "$BUILD_DIR"
 
