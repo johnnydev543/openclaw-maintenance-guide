@@ -105,7 +105,13 @@ openclaw config validate
 
 echo "Restarting Gateway and recreating managed sandboxes"
 openclaw gateway restart
-openclaw sandbox recreate --all
+if ! openclaw sandbox recreate --all; then
+  echo "OpenClaw sandbox recreate failed; removing only labeled sandbox containers as a fallback." >&2
+  mapfile -t SANDBOX_CONTAINERS < <(docker ps -aq --filter label=openclaw.sandbox=1)
+  if (( ${#SANDBOX_CONTAINERS[@]} > 0 )); then
+    docker rm -f "${SANDBOX_CONTAINERS[@]}"
+  fi
+fi
 openclaw sandbox list
 
 echo
