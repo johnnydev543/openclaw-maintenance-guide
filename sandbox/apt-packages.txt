@@ -1,13 +1,12 @@
-# One Debian package per line. Lines beginning with # are comments.
-git
+# Recommended baseline. One Debian package per line; lines beginning with # are comments.
+ca-certificates
 curl
+file
+git
 jq
-ripgrep
+procps
 python3
 python3-pip
-file
-procps
-rclone
-ffmpeg
-opencc
-gh
+ripgrep
+unzip
+zip

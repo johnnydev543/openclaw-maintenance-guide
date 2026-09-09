@@ -1,0 +1,7 @@
+# Copy this file to apt-packages.custom for NAS-specific Debian packages.
+# This file is deliberately not tracked by Git.
+#
+# rclone
+# ffmpeg
+# opencc
+# gh

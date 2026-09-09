@@ -1,0 +1,3 @@
+# Operator-specific sandbox dependencies. Keep credentials out of these files.
+sandbox/apt-packages.custom
+sandbox/pip-packages.custom

@@ -71,10 +71,14 @@ The default image is intentionally minimal. Create a versioned image whenever ag
 The repository keeps package definitions separate from the Dockerfile:
 
 ```text
-sandbox/apt-packages.txt  # one Debian package per line
-sandbox/pip-packages.txt  # standard pip requirements format
+sandbox/apt-packages.txt         # tracked recommended Debian baseline
+sandbox/pip-packages.txt         # tracked recommended Python baseline
+sandbox/apt-packages.custom      # ignored, NAS-specific Debian additions
+sandbox/pip-packages.custom      # ignored, NAS-specific Python additions
 sandbox/Dockerfile        # reads both package files during build
 ```
+
+Create optional local files from the included examples. They are listed in `.gitignore` and are merged into the build automatically. Never place credentials in either custom file.
 
 Run the versioned build-and-activate workflow as the dedicated OpenClaw user:
 

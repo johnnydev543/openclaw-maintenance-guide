@@ -7,6 +7,12 @@ SANDBOX_DIR="${SCRIPT_DIR}/../sandbox"
 VERSION="${1:-$(date +%F)}"
 IMAGE_TAG="openclaw-sandbox:tools-${VERSION}"
 IMAGE_CONFIG_PATH="agents.defaults.sandbox.docker.image"
+BUILD_DIR=""
+
+cleanup() {
+  [[ -z "$BUILD_DIR" ]] || rm -rf "$BUILD_DIR"
+}
+trap cleanup EXIT
 
 if [[ ! "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
   echo "Version must contain only letters, digits, dots, underscores, or hyphens." >&2
@@ -25,8 +31,21 @@ done
   exit 1
 }
 
-if grep -Eq '^[[:space:]]*[^#[:space:]]' "${SANDBOX_DIR}/pip-packages.txt" \
-  && ! grep -Eq '^[[:space:]]*python3-pip([[:space:]]|$)' "${SANDBOX_DIR}/apt-packages.txt"; then
+BUILD_DIR="$(mktemp -d)"
+cp "${SANDBOX_DIR}/Dockerfile" "${BUILD_DIR}/Dockerfile"
+cat "${SANDBOX_DIR}/apt-packages.txt" > "${BUILD_DIR}/apt-packages.txt"
+cat "${SANDBOX_DIR}/pip-packages.txt" > "${BUILD_DIR}/pip-packages.txt"
+
+for kind in apt pip; do
+  custom_file="${SANDBOX_DIR}/${kind}-packages.custom"
+  if [[ -f "$custom_file" ]]; then
+    printf '\n# Local custom packages\n' >> "${BUILD_DIR}/${kind}-packages.txt"
+    cat "$custom_file" >> "${BUILD_DIR}/${kind}-packages.txt"
+  fi
+done
+
+if grep -Eq '^[[:space:]]*[^#[:space:]]' "${BUILD_DIR}/pip-packages.txt" \
+  && ! grep -Eq '^[[:space:]]*python3-pip([[:space:]]|$)' "${BUILD_DIR}/apt-packages.txt"; then
   echo "pip-packages.txt contains packages, so apt-packages.txt must include python3-pip." >&2
   exit 1
 fi
@@ -39,9 +58,9 @@ fi
 
 echo "Building ${IMAGE_TAG}"
 docker build \
-  --file "${SANDBOX_DIR}/Dockerfile" \
+  --file "${BUILD_DIR}/Dockerfile" \
   --tag "$IMAGE_TAG" \
-  "$SANDBOX_DIR"
+  "$BUILD_DIR"
 
 echo "Applying image setting"
 openclaw config set "$IMAGE_CONFIG_PATH" "\"${IMAGE_TAG}\"" --strict-json

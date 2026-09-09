@@ -1,0 +1,5 @@
+# Copy this file to pip-packages.custom for NAS-specific Python packages.
+# This file is deliberately not tracked by Git.
+#
+# pandas==2.3.1
+# opencc-python-reimplemented==0.1.7
