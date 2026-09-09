@@ -1,5 +1,0 @@
-# Recommended Python baseline in standard pip requirements format.
-# Pin versions whenever practical.
-beautifulsoup4==4.13.4
-httpx==0.28.1
-requests==2.32.5

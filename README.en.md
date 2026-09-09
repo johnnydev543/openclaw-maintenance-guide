@@ -68,17 +68,16 @@ Do not use automatic capability acceptance unless every requested permission exp
 
 The default image is intentionally minimal. Create a versioned image whenever agents need additional operating-system tools.
 
-The repository keeps package definitions separate from the Dockerfile:
+The build script owns the recommended package baseline. Optional operator-specific package lists are deliberately untracked:
 
 ```text
-sandbox/apt-packages.txt         # tracked recommended Debian baseline
-sandbox/pip-packages.txt         # tracked recommended Python baseline
-sandbox/apt-packages.custom      # ignored, NAS-specific Debian additions
-sandbox/pip-packages.custom      # ignored, NAS-specific Python additions
-sandbox/Dockerfile        # reads both package files during build
+scripts/build-sandbox-image.sh   # tracked baseline apt and pip packages
+sandbox/apt-packages.txt         # ignored, NAS-specific Debian additions
+sandbox/pip-packages.txt         # ignored, NAS-specific Python additions
+sandbox/Dockerfile               # reads generated package lists during build
 ```
 
-Create optional local files from the included examples. They are listed in `.gitignore` and are merged into the build automatically. Never place credentials in either custom file.
+Create either optional local file when needed. It is listed in `.gitignore` and merged into the build automatically. Never place credentials in either file.
 
 Run the versioned build-and-activate workflow as the dedicated OpenClaw user:
 

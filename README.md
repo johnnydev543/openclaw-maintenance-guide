@@ -114,23 +114,21 @@ openclaw-sandbox:tools-YYYY-MM-DD
 repository 的 `sandbox/` 目錄提供可獨立維護的套件清單：
 
 ```text
-sandbox/apt-packages.txt         # Git 追蹤：建議 Debian 基礎套件
-sandbox/pip-packages.txt         # Git 追蹤：建議 Python 基礎套件
-sandbox/apt-packages.custom      # 不追蹤：此 NAS 額外的 Debian 套件
-sandbox/pip-packages.custom      # 不追蹤：此 NAS 額外的 Python 套件
-sandbox/Dockerfile        # 不需修改；建置時讀取兩份清單
+scripts/build-sandbox-image.sh   # 內建建議基礎 apt 與 pip 套件
+sandbox/apt-packages.txt         # 不追蹤：此 NAS 額外的 Debian 套件
+sandbox/pip-packages.txt         # 不追蹤：此 NAS 額外的 Python 套件
+sandbox/Dockerfile               # 不需修改；建置時讀取腳本產生的清單
 ```
 
-基礎清單包含一般 agent 常用的工具：Git、curl、jq、ripgrep、Python、HTTP/HTML Python 套件與壓縮工具。`rclone`、`ffmpeg`、`opencc`、`gh`、資料分析套件等較專門的需求，建議放進 custom 檔。
+腳本內建一般 agent 常用的基礎工具：Git、curl、jq、ripgrep、Python、HTTP/HTML Python 套件與壓縮工具。`rclone`、`ffmpeg`、`opencc`、`gh`、資料分析套件等較專門的需求，放入本機套件檔即可。
 
-custom 檔可由範本建立：
+要加入 NAS 專用套件時，建立或編輯這兩個本機檔案：
 
 ```bash
-cp sandbox/apt-packages.custom.example sandbox/apt-packages.custom
-cp sandbox/pip-packages.custom.example sandbox/pip-packages.custom
+touch sandbox/apt-packages.txt sandbox/pip-packages.txt
 ```
 
-這兩個 `.custom` 檔已列入 `.gitignore`，不會被提交；仍不得放入 token、密碼或其他憑證。
+兩者已列入 `.gitignore`，不會被提交；每行一個套件，仍不得放入 token、密碼或其他憑證。
 
 首次在 NAS 上，以 `openclaw` 使用者將本 repository clone 到其 home 目錄；之後在 repository 根目錄執行：
 
@@ -151,7 +149,7 @@ cp sandbox/pip-packages.custom.example sandbox/pip-packages.custom
 ### 新增套件的固定流程
 
 ```text
-修改基礎清單或本機 `.custom` 清單
+修改本機 apt 或 pip 套件清單
 → 建置新 versioned image
 → 變更 OpenClaw image 設定
 → 驗證設定

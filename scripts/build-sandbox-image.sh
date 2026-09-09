@@ -8,6 +8,12 @@ VERSION="${1:-$(date +%F)}"
 IMAGE_TAG="openclaw-sandbox:tools-${VERSION}"
 IMAGE_CONFIG_PATH="agents.defaults.sandbox.docker.image"
 BUILD_DIR=""
+BASE_APT_PACKAGES=(
+  ca-certificates curl file git jq procps python3 python3-pip ripgrep unzip zip
+)
+BASE_PIP_PACKAGES=(
+  beautifulsoup4==4.13.4 httpx==0.28.1 requests==2.32.5
+)
 
 cleanup() {
   [[ -z "$BUILD_DIR" ]] || rm -rf "$BUILD_DIR"
@@ -33,14 +39,14 @@ done
 
 BUILD_DIR="$(mktemp -d)"
 cp "${SANDBOX_DIR}/Dockerfile" "${BUILD_DIR}/Dockerfile"
-cat "${SANDBOX_DIR}/apt-packages.txt" > "${BUILD_DIR}/apt-packages.txt"
-cat "${SANDBOX_DIR}/pip-packages.txt" > "${BUILD_DIR}/pip-packages.txt"
+printf '%s\n' "${BASE_APT_PACKAGES[@]}" > "${BUILD_DIR}/apt-packages.txt"
+printf '%s\n' "${BASE_PIP_PACKAGES[@]}" > "${BUILD_DIR}/pip-packages.txt"
 
-for kind in apt pip; do
-  custom_file="${SANDBOX_DIR}/${kind}-packages.custom"
-  if [[ -f "$custom_file" ]]; then
-    printf '\n# Local custom packages\n' >> "${BUILD_DIR}/${kind}-packages.txt"
-    cat "$custom_file" >> "${BUILD_DIR}/${kind}-packages.txt"
+for packages_file in apt-packages.txt pip-packages.txt; do
+  local_file="${SANDBOX_DIR}/${packages_file}"
+  if [[ -f "$local_file" ]]; then
+    printf '\n# Local packages (not tracked by Git)\n' >> "${BUILD_DIR}/${packages_file}"
+    cat "$local_file" >> "${BUILD_DIR}/${packages_file}"
   fi
 done
 
