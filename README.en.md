@@ -68,7 +68,29 @@ Do not use automatic capability acceptance unless every requested permission exp
 
 The default image is intentionally minimal. Create a versioned image whenever agents need additional operating-system tools.
 
-Example `Dockerfile`:
+The repository keeps package definitions separate from the Dockerfile:
+
+```text
+sandbox/apt-packages.txt  # one Debian package per line
+sandbox/pip-packages.txt  # standard pip requirements format
+sandbox/Dockerfile        # reads both package files during build
+```
+
+Run the versioned build-and-activate workflow as the dedicated OpenClaw user:
+
+```bash
+./scripts/build-sandbox-image.sh
+```
+
+It builds a dated image tag, updates the sandbox image setting, validates the configuration, restarts the Gateway, and recreates managed sandboxes. Use an explicit suffix for a second image on the same day:
+
+```bash
+./scripts/build-sandbox-image.sh 2026-09-09-r2
+```
+
+The script refuses to overwrite an existing tag, preserving rollback images.
+
+Legacy manual `Dockerfile` example:
 
 ```dockerfile
 FROM openclaw-sandbox:bookworm-slim

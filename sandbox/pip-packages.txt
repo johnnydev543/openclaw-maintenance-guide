@@ -1,0 +1,3 @@
+# Standard pip requirements format. Pin versions whenever practical.
+# Example:
+# requests==2.32.5

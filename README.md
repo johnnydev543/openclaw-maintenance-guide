@@ -111,43 +111,34 @@ openclaw-sandbox:bookworm-slim
 openclaw-sandbox:tools-YYYY-MM-DD
 ```
 
-範例 `Dockerfile`：
+repository 的 `sandbox/` 目錄提供可獨立維護的套件清單：
 
-```dockerfile
-FROM openclaw-sandbox:bookworm-slim
-
-USER root
-
-RUN apt-get update \
- && apt-get install -y --no-install-recommends \
-      git curl jq ripgrep python3 file procps \
-      rclone ffmpeg opencc gh \
- && rm -rf /var/lib/apt/lists/*
-
-USER sandbox
+```text
+sandbox/apt-packages.txt  # 一行一個 Debian apt 套件
+sandbox/pip-packages.txt  # 標準 pip requirements 格式，建議固定版本
+sandbox/Dockerfile        # 不需修改；建置時讀取兩份清單
 ```
 
-以 `openclaw` 使用者建置：
+首次在 NAS 上，以 `openclaw` 使用者將本 repository clone 到其 home 目錄；之後在 repository 根目錄執行：
 
 ```bash
-docker build -t openclaw-sandbox:tools-YYYY-MM-DD .
+./scripts/build-sandbox-image.sh
 ```
 
-接著把 `agents.defaults.sandbox.docker.image` 改成新 image，依序執行：
+腳本會自動完成以下流程：建置帶當日版本 tag 的 image、更新 sandbox image 設定、驗證設定、重啟 Gateway、刪除舊 sandbox container，並列出新狀態。下一次 agent 執行時，新 container 會自動建立。
+
+同一天再次修改套件時，傳入新的版本尾碼：
 
 ```bash
-openclaw config validate
-openclaw gateway restart
-openclaw sandbox recreate --all
-openclaw sandbox list
+./scripts/build-sandbox-image.sh 2026-09-09-r2
 ```
 
-新 container 會在下次 agent 執行時自動建立。
+腳本拒絕覆蓋既有 image tag，避免失去可回退的版本。
 
 ### 新增套件的固定流程
 
 ```text
-修改 Dockerfile
+修改 `sandbox/apt-packages.txt` 或 `sandbox/pip-packages.txt`
 → 建置新 versioned image
 → 變更 OpenClaw image 設定
 → 驗證設定

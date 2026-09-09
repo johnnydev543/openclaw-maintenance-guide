@@ -1,0 +1,13 @@
+# One Debian package per line. Lines beginning with # are comments.
+git
+curl
+jq
+ripgrep
+python3
+python3-pip
+file
+procps
+rclone
+ffmpeg
+opencc
+gh
