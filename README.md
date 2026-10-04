@@ -2,12 +2,12 @@
 
 [English version](README.en.md)
 
-本指引採用安全優先的架構：Gateway 原生執行於 NAS 的專用低權限使用者；所有 agent 的 shell 與工具命令，都在 rootless Docker sandbox 內執行。
+本指引採用安全優先的架構：Gateway 原生執行於 NAS 的專用低權限使用者；所有 agent 的 shell 與工具命令，都在 Docker sandbox 內執行。
 
 ```text
 Reverse proxy
   → host-native OpenClaw Gateway（專用非 root 使用者）
-  → rootless Docker sandbox
+  → Docker sandbox
   → agent 的工具與 shell 命令
 ```
 
@@ -16,7 +16,7 @@ Gateway 保有模型、LINE、GitHub OAuth 等憑證；它們不可寫入 image�
 ## 基本原則
 
 - Gateway 使用專用 `openclaw` Linux 使用者執行，且不授予 sudo。
-- rootless Docker 只由 `openclaw` 用於 sandbox 生命週期管理。
+- Docker sandbox 由 `openclaw` 管理其生命週期。
 - sandbox 預設採用唯讀 root filesystem、`capDrop: ALL`、無網路。
 - agent 所需的系統套件預先放進自訂 sandbox image；不要在 agent 執行期間安裝。
 - 不要將 host Docker socket、私有 NAS 目錄或憑證掛入 sandbox。
@@ -32,7 +32,8 @@ sudo -iu openclaw
 export PATH="$HOME/.local/openclaw/bin:$HOME/.local/bin:$PATH"
 export OPENCLAW_CONFIG_PATH="$HOME/.openclaw/openclaw.json"
 export OPENCLAW_STATE_DIR="$HOME/.openclaw"
-export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
+# 此 NAS 使用 system Docker daemon；請保持 DOCKER_HOST 未設定。
+# openclaw 服務帳號必須明確取得 /var/run/docker.sock 存取權。
 ```
 
 避免以 root 身份直接執行 OpenClaw。root 僅用於 NAS 層級維護或安裝系統更新。
@@ -218,3 +219,50 @@ openclaw gateway restart
 4. 確認備份可讀取且受保護。
 5. 檢視 image 與 plugin / skill 是否仍有必要。
 ```
+
+
+## 目前 NAS 的 sandbox 與資料掛載（2026-10-04）
+
+本節以目前 NAS 的實際設定為準；若與前述較嚴格的基準架構衝突，以本節為準，並應在下一次安全強化時回復唯讀 root filesystem、最小 capability 與限制網路的目標狀態。
+
+目前 Gateway 使用系統 Docker daemon，而非 rootless Docker。OpenClaw 服務帳號必須被明確授予 Docker socket 存取權；Docker 群組具有近似主機 root 的能力，僅能授予受信任的服務帳號，且不可把 Docker socket 掛入任何 sandbox。
+
+目前的 sandbox 設定包含 `user: "0:0"`、可寫 root filesystem 與 `network: "bridge"`。這些是相對高風險的例外：不要把 token、`.openclaw`、`/home/openclaw` 或其他私有主機目錄掛入 sandbox；應逐步收斂為非 root、唯讀 root filesystem、最小 capabilities 與必要時才開啟的網路。
+
+### setupCommand
+
+`setupCommand` 在每個新 sandbox container 建立時執行一次，不會在每個 agent 回合重跑。它必須具備冪等性、不得輸出或寫入憑證，也不應下載未釘選的內容。若它安裝 OS 套件，會需要可寫 root filesystem、root 使用者和可用網路；較穩定且安全的長期做法仍是將固定依賴烘焙進版本化 image。
+
+變更 `setupCommand`、image、`docker.user`、`readOnlyRoot`、network 或 bind mount 後，依序執行：
+
+```bash
+openclaw config validate
+openclaw sandbox recreate --agent main --force
+openclaw sandbox recreate --agent stock --force
+openclaw sandbox recreate --agent health --force
+```
+
+重建會中斷該 agent 現有的 sandbox container；下一次使用時會以新設定自動建立。
+
+### Agent 資料隔離
+
+每個 agent 在 sandbox 內都使用相同的路徑 `/data`，但各自映射到不同的主機來源：
+
+| Agent | Host source | Sandbox path |
+|---|---|---|
+| main | `/home/openclaw/data/main` | `/data` |
+| stock | `/home/openclaw/data/stock` | `/data` |
+| health | `/home/openclaw/data/health` | `/data` |
+
+在 `agents.entries.<agent>.sandbox.docker` 針對每個 agent 個別設定：
+
+```json
+{
+  "binds": ["/home/openclaw/data/<agent>:/data:rw"],
+  "dangerouslyAllowExternalBindSources": true
+}
+```
+
+不要在 `agents.defaults` 設定 `/home/openclaw/data:/data:rw`，否則所有 agent 都能讀寫彼此資料。Sandbox 內的程式應使用 `/data/...`，不可使用主機絕對路徑 `/home/openclaw/...`；也不要用 workspace symlink 取代明確 bind mount。
+
+主機端資料目錄由 `openclaw` 擁有。若需人工讀取，依最小權限授權 ACL；目前 `johnny` 僅能讀取 `/home/openclaw/data/stock`，不得把 health 或 main 資料授予不必要帳號。對新建立的 stock 子目錄保留預設 ACL，並定期確認 ACL 沒有被覆寫。

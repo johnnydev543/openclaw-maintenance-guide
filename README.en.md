@@ -5,7 +5,7 @@ This guide documents a security-focused OpenClaw deployment:
 ```text
 Reverse proxy
   -> host-native OpenClaw Gateway (dedicated non-root user)
-  -> rootless Docker sandbox containers
+  -> Docker sandbox containers
   -> agent tools and shell commands
 ```
 
@@ -14,7 +14,7 @@ The Gateway runs natively on the host. All agent command execution stays in a sa
 ## Operating model
 
 - Run the Gateway as a dedicated `openclaw` user with no sudo access.
-- Run rootless Docker under that same user only for sandbox lifecycle management.
+- Use the configured Docker daemon only for sandbox lifecycle management.
 - Keep agent sandboxes read-only, capability-dropped, and network-disabled unless a specific use case requires an exception.
 - Build a custom sandbox image for agent dependencies; do not install them at agent runtime.
 - Keep gateway secrets, OAuth credentials, the Docker socket, and private host folders out of sandbox mounts.
@@ -27,7 +27,8 @@ Run as the dedicated OpenClaw user:
 export PATH="$HOME/.local/openclaw/bin:$HOME/.local/bin:$PATH"
 export OPENCLAW_CONFIG_PATH="$HOME/.openclaw/openclaw.json"
 export OPENCLAW_STATE_DIR="$HOME/.openclaw"
-export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
+# This NAS uses the system Docker daemon; leave DOCKER_HOST unset.
+# The openclaw service account must have explicit access to /var/run/docker.sock.
 
 openclaw gateway status
 openclaw sandbox list
@@ -172,3 +173,50 @@ Backups must be access-controlled or encrypted. If backing up SQLite state at th
 - Do not place tokens in Dockerfiles, images, workspaces, or repository files.
 - Do not run broad Docker cleanup commands against a shared system Docker daemon.
 - Do not delete OpenClaw state, workspaces, sessions, or recovery backups before confirming they are no longer needed.
+
+
+## Current NAS sandbox and data mounts (2026-10-04)
+
+This section records the current NAS configuration. Where it conflicts with the stricter baseline above, this section takes precedence; a future hardening pass should restore the intended read-only root filesystem, minimum capabilities, and restricted networking.
+
+The Gateway currently uses the system Docker daemon, not rootless Docker. The OpenClaw service account needs explicit Docker-socket access. Docker-group access is effectively host-root-equivalent, so grant it only to the trusted service account and never mount the Docker socket into a sandbox.
+
+The current sandbox uses `user: "0:0"`, a writable root filesystem, and `network: "bridge"`. These are higher-risk exceptions. Do not mount tokens, `.openclaw`, `/home/openclaw`, or other private host directories into a sandbox. Converge toward a non-root user, read-only root filesystem, minimum capabilities, and narrowly enabled networking.
+
+### setupCommand
+
+`setupCommand` runs once whenever a new sandbox container is created; it does not run on every agent turn. It must be idempotent, must not print or write credentials, and should not download unpinned content. Installing OS packages through it requires a writable root filesystem, a root user, and network access. Baking stable dependencies into a versioned image remains the safer long-term approach.
+
+After changing `setupCommand`, the image, `docker.user`, `readOnlyRoot`, network, or a bind mount, run:
+
+```bash
+openclaw config validate
+openclaw sandbox recreate --agent main --force
+openclaw sandbox recreate --agent stock --force
+openclaw sandbox recreate --agent health --force
+```
+
+Recreation interrupts that agent's current sandbox container. The next use creates it with the updated configuration.
+
+### Per-agent data isolation
+
+Every agent uses `/data` inside its sandbox, but each path maps to a separate host source:
+
+| Agent | Host source | Sandbox path |
+|---|---|---|
+| main | `/home/openclaw/data/main` | `/data` |
+| stock | `/home/openclaw/data/stock` | `/data` |
+| health | `/home/openclaw/data/health` | `/data` |
+
+Configure each agent independently under `agents.entries.<agent>.sandbox.docker`:
+
+```json
+{
+  "binds": ["/home/openclaw/data/<agent>:/data:rw"],
+  "dangerouslyAllowExternalBindSources": true
+}
+```
+
+Do not configure `/home/openclaw/data:/data:rw` in `agents.defaults`, because that allows every agent to read and write every other agent's data. Sandbox programs must use `/data/...`, not host-absolute `/home/openclaw/...` paths. Do not substitute workspace symlinks for explicit bind mounts.
+
+The host data directories are owned by `openclaw`. Grant human read access by minimum-privilege ACL only; currently `johnny` may read only `/home/openclaw/data/stock`. Do not grant health or main data to unnecessary accounts. Keep default ACLs on newly created stock subdirectories and periodically verify they were not overwritten.
