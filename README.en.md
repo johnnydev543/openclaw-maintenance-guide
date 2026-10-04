@@ -220,3 +220,18 @@ Configure each agent independently under `agents.entries.<agent>.sandbox.docker`
 Do not configure `/home/openclaw/data:/data:rw` in `agents.defaults`, because that allows every agent to read and write every other agent's data. Sandbox programs must use `/data/...`, not host-absolute `/home/openclaw/...` paths. Do not substitute workspace symlinks for explicit bind mounts.
 
 The host data directories are owned by `openclaw`. Grant human read access by minimum-privilege ACL only; currently `johnny` may read only `/home/openclaw/data/stock`. Do not grant health or main data to unnecessary accounts. Keep default ACLs on newly created stock subdirectories and periodically verify they were not overwritten.
+
+
+### Image policy and sandbox browser image
+
+The regular agent sandbox currently uses the default `openclaw-sandbox:bookworm-slim` image; normal operations do not use a custom sandbox image. Extra commands and runtime dependencies are managed through `setupCommand`. The existing `scripts/build-sandbox-image.sh` is retained only for exceptional fixed dependencies that cannot be provided by `setupCommand`, and is not part of routine maintenance.
+
+The sandbox browser is a separate image. It currently uses `openclaw-sandbox-browser:bookworm-slim`; do not substitute the regular sandbox image or a Gateway browser image. On a new NAS, after image cleanup, or when the browser image is missing, use a source checkout that matches the installed OpenClaw version:
+
+```bash
+scripts/sandbox-browser-setup.sh
+docker image inspect openclaw-sandbox-browser:bookworm-slim
+openclaw sandbox recreate --browser --all --force
+```
+
+This browser-image helper is not included in the global npm package, so a source checkout is required. Run `openclaw config validate` first and confirm `sandbox.browser.enabled: true`, the configured image name, and the browser network. The browser sandbox has its own Docker network; do not share private data through ordinary agent `docker.binds`.

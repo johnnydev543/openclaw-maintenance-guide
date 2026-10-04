@@ -266,3 +266,18 @@ openclaw sandbox recreate --agent health --force
 不要在 `agents.defaults` 設定 `/home/openclaw/data:/data:rw`，否則所有 agent 都能讀寫彼此資料。Sandbox 內的程式應使用 `/data/...`，不可使用主機絕對路徑 `/home/openclaw/...`；也不要用 workspace symlink 取代明確 bind mount。
 
 主機端資料目錄由 `openclaw` 擁有。若需人工讀取，依最小權限授權 ACL；目前 `johnny` 僅能讀取 `/home/openclaw/data/stock`，不得把 health 或 main 資料授予不必要帳號。對新建立的 stock 子目錄保留預設 ACL，並定期確認 ACL 沒有被覆寫。
+
+
+### Image policy and sandbox browser image
+
+一般 agent sandbox 目前固定使用預設 image `openclaw-sandbox:bookworm-slim`；日常維護不使用 custom sandbox image。額外的命令或 runtime 依賴由 `setupCommand` 管理。既有的 `scripts/build-sandbox-image.sh` 僅保留為例外情況（需要不可在 setupCommand 提供的固定依賴）才使用，並且不應成為日常更新流程。
+
+sandbox browser 是獨立 image，現用 `openclaw-sandbox-browser:bookworm-slim`，不可用一般 sandbox image 或 Gateway 的 browser image 取代。新 NAS、清理 image 後或 browser image 缺失時，從與已安裝 OpenClaw 相同版本的 source checkout 執行：
+
+```bash
+scripts/sandbox-browser-setup.sh
+docker image inspect openclaw-sandbox-browser:bookworm-slim
+openclaw sandbox recreate --browser --all --force
+```
+
+此 browser 建置 helper 不包含在全域 npm package 中；必須使用 source checkout。重建前先執行 `openclaw config validate`，並確認 `sandbox.browser.enabled: true`、image 名稱與 browser network 設定。Browser sandbox 使用專用 Docker network，不應透過一般 agent 的 `docker.binds` 分享私有資料。
