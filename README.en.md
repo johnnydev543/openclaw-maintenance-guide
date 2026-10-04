@@ -16,7 +16,7 @@ The Gateway runs natively on the host. All agent command execution stays in a sa
 - Run the Gateway as a dedicated `openclaw` user with no sudo access.
 - Use the configured Docker daemon only for sandbox lifecycle management.
 - Keep agent sandboxes read-only, capability-dropped, and network-disabled unless a specific use case requires an exception.
-- Build a custom sandbox image for agent dependencies; do not install them at agent runtime.
+- Manage general agent dependencies with `setupCommand` when a sandbox is created; do not maintain a custom sandbox image for routine dependencies.
 - Keep gateway secrets, OAuth credentials, the Docker socket, and private host folders out of sandbox mounts.
 
 ## Routine checks
@@ -65,7 +65,44 @@ openclaw gateway status
 
 Do not use automatic capability acceptance unless every requested permission expansion has been reviewed. Run `openclaw update cleanup` only after the updated installation has been stable long enough that rollback recovery files are no longer needed.
 
-## Custom sandbox image
+## Sandbox dependencies: setupCommand
+
+General agent sandboxes use the default image:
+
+```text
+openclaw-sandbox:bookworm-slim
+```
+
+Routine apt, pip, and command dependencies belong in `agents.defaults.sandbox.docker.setupCommand`; do not build or maintain a custom sandbox image. This keeps dependency declarations in `~/.openclaw/openclaw.json` and avoids Dockerfile and image-tag drift after OpenClaw updates.
+
+The current NAS baseline is:
+
+```json
+{
+  "image": "openclaw-sandbox:bookworm-slim",
+  "readOnlyRoot": false,
+  "user": "0:0",
+  "network": "bridge",
+  "tmpfs": ["/tmp", "/var/tmp", "/run"],
+  "capDrop": ["AUDIT_WRITE", "KILL", "MKNOD", "NET_BIND_SERVICE", "NET_RAW", "SETPCAP", "SYS_CHROOT"],
+  "setupCommand": "export DEBIAN_FRONTEND=noninteractive; apt-get -o APT::Sandbox::User=root update && apt-get -o APT::Sandbox::User=root install -y git curl jq ripgrep python3 file procps rclone ffmpeg opencc gh python3-venv python3-pip && python3 -m pip install --break-system-packages FinMind tqdm finmind-mcp python-dotenv yt_dlp"
+}
+```
+
+`APT::Sandbox::User=root` is required because APT normally drops to `_apt`, which can fail with `setgroups`, `setuid`, or cache-directory permission errors in this restricted Docker sandbox.
+
+After changing `setupCommand`:
+
+```bash
+openclaw config validate
+openclaw sandbox recreate --all --force
+```
+
+It runs once per newly created container. Keep it idempotent and never include tokens, credentials, PATs, or untrusted download scripts. Use the OpenClaw sandbox browser for browser automation instead of installing Chromium into the general sandbox.
+
+### Legacy custom-image procedure (do not use)
+
+The remaining custom-image notes are retained only to identify or retire existing images. Do not follow them for new general sandbox dependencies; use `setupCommand` above.
 
 The default image is intentionally minimal. Create a versioned image whenever agents need additional operating-system tools.
 

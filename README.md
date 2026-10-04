@@ -18,7 +18,7 @@ Gateway 保有模型、LINE、GitHub OAuth 等憑證；它們不可寫入 image�
 - Gateway 使用專用 `openclaw` Linux 使用者執行，且不授予 sudo。
 - Docker sandbox 由 `openclaw` 管理其生命週期。
 - sandbox 預設採用唯讀 root filesystem、`capDrop: ALL`、無網路。
-- agent 所需的系統套件預先放進自訂 sandbox image；不要在 agent 執行期間安裝。
+- agent 所需的系統與 Python 套件由 `setupCommand` 在新 sandbox 建立時安裝；日常維護不使用 custom sandbox image。
 - 不要將 host Docker socket、私有 NAS 目錄或憑證掛入 sandbox。
 
 ## 進入維護環境
@@ -98,7 +98,44 @@ openclaw update cleanup
 
 此動作會清理更新復原資料，降低回滾能力。
 
-## 自訂 sandbox image
+## Sandbox 套件管理：setupCommand
+
+一般 agent sandbox 固定使用預設 image：
+
+```text
+openclaw-sandbox:bookworm-slim
+```
+
+日常 apt、pip 與命令依賴集中在 `agents.defaults.sandbox.docker.setupCommand`，不建立或維護 custom sandbox image。這避免 OpenClaw 更新後 Dockerfile、image tag 與套件清單漂移。
+
+目前 NAS 使用：
+
+```json
+{
+  "image": "openclaw-sandbox:bookworm-slim",
+  "readOnlyRoot": false,
+  "user": "0:0",
+  "network": "bridge",
+  "tmpfs": ["/tmp", "/var/tmp", "/run"],
+  "capDrop": ["AUDIT_WRITE", "KILL", "MKNOD", "NET_BIND_SERVICE", "NET_RAW", "SETPCAP", "SYS_CHROOT"],
+  "setupCommand": "export DEBIAN_FRONTEND=noninteractive; apt-get -o APT::Sandbox::User=root update && apt-get -o APT::Sandbox::User=root install -y git curl jq ripgrep python3 file procps rclone ffmpeg opencc gh python3-venv python3-pip && python3 -m pip install --break-system-packages FinMind tqdm finmind-mcp python-dotenv yt_dlp"
+}
+```
+
+`APT::Sandbox::User=root` 是必要設定，因為 APT 預設降權到 `_apt`，在受限 Docker sandbox 會發生 `setgroups`、`setuid` 或快取目錄寫入錯誤。
+
+修改 `setupCommand` 後：
+
+```bash
+openclaw config validate
+openclaw sandbox recreate --all --force
+```
+
+它每個新 container 只執行一次；必須可重複執行，且不得包含 token、密碼、PAT 或未受信任下載腳本。瀏覽器自動化請使用 OpenClaw sandbox browser，不要在一般 sandbox 裡另裝 Chromium。
+
+### 舊 custom image 流程（不再使用）
+
+下列歷史說明僅供既有 image 的回溯或移除參考。不要依照它建立新的一般 sandbox image；新增套件請改用上方的 `setupCommand`。
 
 預設 image 是刻意精簡的：
 
@@ -231,7 +268,7 @@ openclaw gateway restart
 
 ### setupCommand
 
-`setupCommand` 在每個新 sandbox container 建立時執行一次，不會在每個 agent 回合重跑。它必須具備冪等性、不得輸出或寫入憑證，也不應下載未釘選的內容。若它安裝 OS 套件，會需要可寫 root filesystem、root 使用者和可用網路；較穩定且安全的長期做法仍是將固定依賴烘焙進版本化 image。
+`setupCommand` 在每個新 sandbox container 建立時執行一次，不會在每個 agent 回合重跑。它必須具備冪等性、不得輸出或寫入憑證，也不應下載未釘選的內容。若它安裝 OS 套件，會需要可寫 root filesystem、root 使用者和可用網路；本 NAS 的標準作法就是以它管理固定依賴，而不使用 custom sandbox image。
 
 變更 `setupCommand`、image、`docker.user`、`readOnlyRoot`、network 或 bind mount 後，依序執行：
 
@@ -270,7 +307,7 @@ openclaw sandbox recreate --agent health --force
 
 ### Image policy and sandbox browser image
 
-一般 agent sandbox 目前固定使用預設 image `openclaw-sandbox:bookworm-slim`；日常維護不使用 custom sandbox image。額外的命令或 runtime 依賴由 `setupCommand` 管理。既有的 `scripts/build-sandbox-image.sh` 僅保留為例外情況（需要不可在 setupCommand 提供的固定依賴）才使用，並且不應成為日常更新流程。
+一般 agent sandbox 目前固定使用預設 image `openclaw-sandbox:bookworm-slim`；額外的命令或 runtime 依賴由 `setupCommand` 管理。`scripts/build-sandbox-image.sh` 是舊流程，僅供盤點或移除既有 image 使用，不應用來建立新的日常 sandbox image。
 
 sandbox browser 是獨立 image，現用 `openclaw-sandbox-browser:bookworm-slim`，不可用一般 sandbox image 或 Gateway 的 browser image 取代。新 NAS、清理 image 後或 browser image 缺失時，從與已安裝 OpenClaw 相同版本的 source checkout 執行：
 
