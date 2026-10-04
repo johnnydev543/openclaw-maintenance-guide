@@ -281,3 +281,13 @@ openclaw sandbox recreate --browser --all --force
 ```
 
 此 browser 建置 helper 不包含在全域 npm package 中；必須使用 source checkout。重建前先執行 `openclaw config validate`，並確認 `sandbox.browser.enabled: true`、image 名稱與 browser network 設定。Browser sandbox 使用專用 Docker network，不應透過一般 agent 的 `docker.binds` 分享私有資料。
+
+
+預設 image 並不代表 image 會自動存在。新 NAS、Docker image 清理後或出現 image-missing 錯誤時，從與已安裝 OpenClaw 相同版本的 source checkout 建立一般 sandbox image：
+
+```bash
+scripts/sandbox-setup.sh
+docker image inspect openclaw-sandbox:bookworm-slim
+```
+
+接著才建立同版本的 browser image，並依本節的 browser recreate 步驟啟用它。兩個 image 都使用官方預設 tag；不需也不應為日常需求建立 custom tag。

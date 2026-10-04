@@ -235,3 +235,13 @@ openclaw sandbox recreate --browser --all --force
 ```
 
 This browser-image helper is not included in the global npm package, so a source checkout is required. Run `openclaw config validate` first and confirm `sandbox.browser.enabled: true`, the configured image name, and the browser network. The browser sandbox has its own Docker network; do not share private data through ordinary agent `docker.binds`.
+
+
+A default image does not mean that the image exists automatically. On a new NAS, after Docker-image cleanup, or after an image-missing error, build the regular sandbox image from a source checkout matching the installed OpenClaw version:
+
+```bash
+scripts/sandbox-setup.sh
+docker image inspect openclaw-sandbox:bookworm-slim
+```
+
+Then build the browser image from the same version and enable it with the browser-recreation step in this section. Both images use the official default tags; routine operations do not need custom tags.
